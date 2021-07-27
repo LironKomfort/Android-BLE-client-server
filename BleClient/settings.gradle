@@ -1,0 +1,4 @@
+include ':blelib'
+project(':blelib').projectDir=new File('../BleLib/blelib')
+rootProject.name = "BleClient"
+include ':app'

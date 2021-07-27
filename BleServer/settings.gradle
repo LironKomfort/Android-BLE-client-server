@@ -1,0 +1,4 @@
+rootProject.name = "BleServer"
+include ':app'
+include 'blelib'
+project(':blelib').projectDir=new File('../BleLib/blelib')
