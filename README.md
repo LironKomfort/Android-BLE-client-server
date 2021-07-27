@@ -1,2 +1,2 @@
-# Android-BLE-client-server
-Client-Server application for bandwidth measurement
+# Android-BLE-bandwidth client-server
+Client-Server applications for bandwidth measurement
