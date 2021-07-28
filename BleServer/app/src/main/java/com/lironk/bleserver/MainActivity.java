@@ -154,6 +154,12 @@ public class MainActivity extends AppCompatActivity implements IBleEvents {
 
         if(state == BluetoothAdapter.STATE_DISCONNECTED){
             mStarted.set(false);
+            synchronized (mBandwidthTimerLock){
+                if(mBandwidthTimer != null){
+                    mBandwidthTimer.cancel();
+                    mBandwidthTimer = null;
+                }
+            }
         }
 
         runOnUiThread(() -> {

@@ -178,8 +178,8 @@ public class MainActivity extends AppCompatActivity implements IBleEvents {
             long tId = Thread.currentThread().getId();
             if(mBleConnected.get()){
                 if(mStarted.get()){
-                    Log.d(TAG, "Thread: " + tId + ". Button Stop click event");
-                    send(new BleCharcCommand(new byte[]{eBleCommand.eCuBleCommand_Stop.getCommand()}));
+//                    Log.d(TAG, "Thread: " + tId + ". Button Stop click event");
+//                    send(new BleCharcCommand(new byte[]{eBleCommand.eCuBleCommand_Stop.getCommand()}));
                 }
                 else {
                     Log.d(TAG, "Thread: " + tId + ". Button Start click event");
@@ -195,7 +195,13 @@ public class MainActivity extends AppCompatActivity implements IBleEvents {
         Button btnGet = findViewById(R.id.btnGet);
         btnGet.setOnClickListener(v -> {
             if(mBleConnected.get()){
-                send(new BleCharcCommand(new byte[]{eBleCommand.eCuBleCommand_Get.getCommand()}));
+                if(mStarted.get()){
+                    Log.w(TAG, "Bandwidth test in progress...");
+                    showToast("Bandwidth test in progress...");
+                }
+                else{
+                    send(new BleCharcCommand(new byte[]{eBleCommand.eCuBleCommand_Get.getCommand()}));
+                }
             }
             else {
                 Log.w(TAG, "Bluetooth not connected");
@@ -226,6 +232,9 @@ public class MainActivity extends AppCompatActivity implements IBleEvents {
                 mBleConnected.set(false);
                 mStarted.set(false);
                 mHandler.removeCallbacks(mRunnable);
+                initBandwidth();
+                initAuthor();
+                updateBandwidth();
                 updateConnectBtnTxt();
                 updateStartBtnText();
                 break;
@@ -273,7 +282,14 @@ public class MainActivity extends AppCompatActivity implements IBleEvents {
         mPacketCount.set(0);
         mByteCount.set(0);
         mStartTime = System.currentTimeMillis();
-        mStarted.set(true);
+        mEndTime = 0;
+    }
+
+    private void initAuthor(){
+        runOnUiThread(() -> {
+            TextView txtUser = findViewById(R.id.txtAuthor);
+            txtUser.setText("N/A");
+        });
     }
 
     private void updateBandwidth(){
@@ -304,16 +320,18 @@ public class MainActivity extends AppCompatActivity implements IBleEvents {
 
     private void updateStartBtnText(){
         runOnUiThread(() -> {
-            if(mStarted.get()){
-                // Stop txt
-                Button btnStart = findViewById(R.id.btnStart);
-                btnStart.setText("STOP TX");
-            }
-            else{
-                // Start txt
-                Button btnStart = findViewById(R.id.btnStart);
-                btnStart.setText("START TX");
-            }
+            Button btnStart = findViewById(R.id.btnStart);
+            btnStart.setEnabled(!mStarted.get());
+//            if(mStarted.get()){
+//                Button btnStart = findViewById(R.id.btnStart);
+//                btnStart.setEnabled(!mStarted.get());
+//                btnStart.setText("STOP TX");
+//            }
+//            else{
+//                // Start txt
+//                Button btnStart = findViewById(R.id.btnStart);
+//                btnStart.setText("START TX");
+//            }
         });
     }
 
@@ -328,6 +346,7 @@ public class MainActivity extends AppCompatActivity implements IBleEvents {
         if(status.getCommand() == eBleCommand.eCuBleCommand_Start){
             if(eBleStatus.eBleStatus_Ok.and(status.getStatus())){
                 initBandwidth();
+                mStarted.set(true);
                 updateStartBtnText();
                 startHandler();
                 Log.d(TAG, "Thread: " + tId + ". Tx started");

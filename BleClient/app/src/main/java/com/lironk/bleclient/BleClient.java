@@ -22,6 +22,7 @@ import com.lironk.blelib.main.BleOperation;
 import com.lironk.blelib.main.BleProfile;
 import com.lironk.blelib.main.IBleEvents;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -224,13 +225,13 @@ public class BleClient {
 
     private void executeOperation() {
         while (true){
-            Log.d(TAG, "executeOperation");
+            //Log.d(TAG, "executeOperation");
             try {
                 mQueueSem.acquire();
             } catch (InterruptedException e) {
                 continue;
             }
-            Log.d(TAG, "executeOperation 2");
+            //Log.d(TAG, "executeOperation 2");
 
             try {
                 mExecuteSem.acquire();
@@ -238,8 +239,8 @@ public class BleClient {
                 continue;
             }
 
-            long tId = Thread.currentThread().getId();
-            Log.d(TAG, "Thread: " + tId + ". executeOperation 3");
+            //long tId = Thread.currentThread().getId();
+            //Log.d(TAG, "Thread: " + tId + ". executeOperation 3");
 
             synchronized (mOperationList){
                 if(mOperationList.size() > 0){
@@ -286,8 +287,20 @@ public class BleClient {
         synchronized (mOperationList){
             mOperationList.clear();
         }
+        mPendingOperation = null;
         endOperation();
         mQueueSem.drainPermits();
+    }
+
+    private void clearGattCache(){
+        try {
+            Method localMethod = mBluetoothGatt.getClass().getMethod("refresh");
+            if(localMethod != null) {
+                localMethod.invoke(mBluetoothGatt);
+            }
+        } catch(Exception localException) {
+            Log.d(TAG, "clearGattCache Error=" + localException.toString());
+        }
     }
 
     private void writeCharacteristic(UUID characUUID, byte[] value) {
@@ -356,6 +369,7 @@ public class BleClient {
                 case STATE_DISCONNECTED:
                     Log.d(TAG, "onConnectionStateChange. State = STATE_DISCONNECTED");
                     resetOperations();
+                    clearGattCache();
                     break;
                 case STATE_CONNECTING:
                     Log.d(TAG, "onConnectionStateChange. State = STATE_CONNECTING");

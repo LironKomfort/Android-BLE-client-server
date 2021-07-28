@@ -204,8 +204,12 @@ public class BleServer {
         }
 
         int currentPacketCount = 1;
-        int partsCount = ((data.length/(mMaxPayloadSize - HEADER_SIZE)) + 1);
+        int partsCount = 1;
         int buffIdx = 0;
+
+        if(data.length != mMaxPayloadSize - HEADER_SIZE){
+            partsCount = ((data.length/(mMaxPayloadSize - HEADER_SIZE)) + 1);
+        }
 
         if(partsCount > 1){
             for(currentPacketCount = 1; currentPacketCount <= partsCount; currentPacketCount++){
@@ -409,6 +413,7 @@ public class BleServer {
         synchronized (mOperationList){
             mOperationList.clear();
         }
+        mPendingOperation = null;
         endOperation();
         mQueueSem.drainPermits();
     }
@@ -436,6 +441,8 @@ public class BleServer {
                     Log.d(TAG, "onConnectionStateChange. STATE_DISCONNECTED");
                     mRegisteredDevice = null;
                     resetOperations();
+//                    stopService();
+//                    startService();
                     break;
                 case BluetoothProfile.STATE_CONNECTING:
                     Log.d(TAG, "onConnectionStateChange. STATE_CONNECTING");
@@ -581,11 +588,13 @@ public class BleServer {
     private void notifyRegisteredDevices(UUID characUUID, byte[] val, BluetoothDevice device) {
         long tId = Thread.currentThread().getId();
 
-        if(characUUID.equals(R_STATUS.toString()) && val[2] == eBleCommand.eCuBleCommand_Start.getCommand()){
-            Log.d(TAG, "Thread: " + tId + ". notifyRegisteredDevices. COMMAND START");
-        }
-        else if(characUUID.equals(R_STATUS.toString()) && val[2] == eBleCommand.eCuBleCommand_Stop.getCommand()){
-            Log.d(TAG, "Thread: " + tId + ". notifyRegisteredDevices. COMMAND STOP");
+        if(characUUID.toString().equals(R_STATUS.toString())){
+            if(val[2] == eBleCommand.eCuBleCommand_Start.getCommand()){
+                Log.d(TAG, "Thread: " + tId + ". notifyRegisteredDevices. COMMAND START");
+            }
+            else if(val[2] == eBleCommand.eCuBleCommand_Stop.getCommand()){
+                Log.d(TAG, "Thread: " + tId + ". notifyRegisteredDevices. COMMAND STOP");
+            }
         }
 
         BluetoothGattCharacteristic characteristic = mBluetoothGattServer.getService(SERVER_UUID).getCharacteristic(characUUID);
