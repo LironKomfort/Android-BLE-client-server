@@ -23,6 +23,7 @@ import com.lironk.blelib.main.BleProfile;
 import com.lironk.blelib.main.IBleEvents;
 
 import java.lang.reflect.Method;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
@@ -49,7 +50,7 @@ public class BleClient {
     private Context mContext;
     private int mMaxPayloadSize = DEFAULT_MTU;
 
-    private ArrayList<Byte> mIncomingDataList;
+    private ByteBuffer mIncomingByteBuff;
 
     private ExecutorService mExecutorOut;
     private Semaphore mExecuteSem;
@@ -67,8 +68,6 @@ public class BleClient {
 
     public BleClient(Context context){
         mContext = context;
-
-        mIncomingDataList = new ArrayList<>();
 
         mExecutorOut = Executors.newSingleThreadExecutor();
         mExecuteSem = new Semaphore(1);
@@ -285,6 +284,7 @@ public class BleClient {
 
     private void resetOperations(){
         synchronized (mOperationList){
+            Log.d(TAG, "resetOperations");
             mOperationList.clear();
         }
         mPendingOperation = null;
@@ -369,7 +369,7 @@ public class BleClient {
                 case STATE_DISCONNECTED:
                     Log.d(TAG, "onConnectionStateChange. State = STATE_DISCONNECTED");
                     resetOperations();
-                    clearGattCache();
+                    gatt.close();
                     break;
                 case STATE_CONNECTING:
                     Log.d(TAG, "onConnectionStateChange. State = STATE_CONNECTING");
@@ -459,39 +459,29 @@ public class BleClient {
 
                 // Only one part - remove header & send CB
                 if(value[1] == 1){
-                    notifyMessageRcv(characteristic.getUuid(), Arrays.copyOfRange(value, HEADER_SIZE, value.length));
+                    mIncomingByteBuff.clear();
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
+                    notifyMessageRcv(characteristic.getUuid(), mIncomingByteBuff.array());
                 }
+
                 // First part - init byte array & copy data (without header)
                 else if(value[0] == 1){
-                    mIncomingDataList = new ArrayList<>();
-                    for (int i = HEADER_SIZE; i < value.length; i++){
-                        mIncomingDataList.add(value[i]);
-                    }
+                    mIncomingByteBuff.clear();
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
                 }
                 // Last part - copy to byte array (without header) & send CB
                 else if(value[0] == value[1]){
-                    for (int i = HEADER_SIZE; i < value.length; i++){
-                        mIncomingDataList.add(value[i]);
-                    }
-
-                    byte[] result = new byte[mIncomingDataList.size()];
-                    for(int i = 0; i < mIncomingDataList.size(); i++) {
-                        result[i] = mIncomingDataList.get(i).byteValue();
-                    }
-
-                    notifyMessageRcv(characteristic.getUuid(), result);
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
+                    notifyMessageRcv(characteristic.getUuid(), mIncomingByteBuff.array());
                 }
                 // Accumulate parts to byte array (without header)
                 else {
-                    for (int i = HEADER_SIZE; i < value.length; i++){
-                        mIncomingDataList.add(value[i]);
-                    }
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
                 }
             }
             else{
                 Log.w(TAG, "onCharacteristicChanged. Recv with 0 data");
             }
-
         }
 
         @Override
@@ -506,6 +496,7 @@ public class BleClient {
         public void onMtuChanged(BluetoothGatt gatt, int mtu, int status) {
             Log.d(TAG, "onMtuChanged, mtu=" + mtu);
             mMaxPayloadSize = mtu - GATT_HEADER_SIZE;
+            mIncomingByteBuff = ByteBuffer.allocate(mMaxPayloadSize);
             if (mPendingOperation instanceof MtuRequest){
                 endOperation();
                 enqueueOperation(new NotificationEnable(BleProfile.R_STATUS, BleProfile.CLIENT_CONFIG));

@@ -25,11 +25,10 @@ import com.lironk.blelib.main.BleCharacteristic;
 import com.lironk.blelib.main.BleOperation;
 import com.lironk.blelib.main.IBleEvents;
 
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashSet;
 import java.util.LinkedList;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -57,9 +56,7 @@ public class BleServer {
     private Context mContext;
     private int mMaxPayloadSize = DEFAULT_MTU;
 
-    private Set<UUID> mWritableCharsSet;
-
-    private ArrayList<Byte> mIncomingDataList;
+    private ByteBuffer mIncomingByteBuff;
 
     private ExecutorService mExecutorOut;
     private Semaphore mExecuteSem;
@@ -80,10 +77,6 @@ public class BleServer {
 
     public BleServer(Context context){
         mContext = context;
-
-        mWritableCharsSet = new HashSet<>(Arrays.asList(WRITABLE_CHARC_ARR));
-
-        mIncomingDataList = new ArrayList<>();
 
         mExecutorOut = Executors.newSingleThreadExecutor();
         mExecuteSem = new Semaphore(1);
@@ -411,6 +404,7 @@ public class BleServer {
 
     private void resetOperations(){
         synchronized (mOperationList){
+            Log.d(TAG, "resetOperations");
             mOperationList.clear();
         }
         mPendingOperation = null;
@@ -441,8 +435,6 @@ public class BleServer {
                     Log.d(TAG, "onConnectionStateChange. STATE_DISCONNECTED");
                     mRegisteredDevice = null;
                     resetOperations();
-//                    stopService();
-//                    startService();
                     break;
                 case BluetoothProfile.STATE_CONNECTING:
                     Log.d(TAG, "onConnectionStateChange. STATE_CONNECTING");
@@ -471,48 +463,43 @@ public class BleServer {
 
             Log.d(TAG, "Thread: " + tId + ". onCharacteristicWriteRequest. UUID=" + characteristic.getUuid());
 
-            if(device.equals(mRegisteredDevice) && mWritableCharsSet.contains(characteristic.getUuid())){
+            if(value != null && value.length >0){
+                if(value.length > mMaxPayloadSize){
+                    Log.e(TAG, "Thread: " + tId + ". onCharacteristicWriteRequest. PAYLOAD SIZE=" + value.length
+                            + ". WRONG PAYLOAD SIZE ON CHRC=" + characteristic.getUuid());
+                }
+
                 // Only one part - remove header & send CB
                 if(value[1] == 1){
-                    new Thread(() -> notifyMessageRcv(characteristic.getUuid(), Arrays.copyOfRange(value, HEADER_SIZE, value.length))).start();
+                    mIncomingByteBuff.clear();
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
+                    notifyMessageRcv(characteristic.getUuid(), mIncomingByteBuff.array());
                 }
+
                 // First part - init byte array & copy data (without header)
                 else if(value[0] == 1){
-                    mIncomingDataList = new ArrayList<>();
-                    for (int i = HEADER_SIZE; i < value.length; i++){
-                        mIncomingDataList.add(value[i]);
-                    }
+                    mIncomingByteBuff.clear();
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
                 }
                 // Last part - copy to byte array (without header) & send CB
                 else if(value[0] == value[1]){
-                    for (int i = HEADER_SIZE; i < value.length; i++){
-                        mIncomingDataList.add(value[i]);
-                    }
-
-                    byte[] result = new byte[mIncomingDataList.size()];
-                    for(int i = 0; i < mIncomingDataList.size(); i++) {
-                        result[i] = mIncomingDataList.get(i).byteValue();
-                    }
-
-                    notifyMessageRcv(characteristic.getUuid(), result);
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
+                    notifyMessageRcv(characteristic.getUuid(), mIncomingByteBuff.array());
                 }
                 // Accumulate parts to byte array (without header)
                 else {
-                    for (int i = HEADER_SIZE; i < value.length; i++){
-                        mIncomingDataList.add(value[i]);
-                    }
+                    mIncomingByteBuff.put(value, HEADER_SIZE, value.length - HEADER_SIZE);
                 }
 
-                if(responseNeeded){
+                if(responseNeeded) {
                     mBluetoothGattServer.sendResponse(device, requestId, GATT_SUCCESS, offset, value);
                 }
             }
-            else {
-                // Invalid characteristic
-                Log.e(TAG, "onCharacteristicWriteRequest. Invalid Characteristic = " + characteristic.getUuid());
-                if (responseNeeded)
-                    mBluetoothGattServer.sendResponse(device, requestId, GATT_FAILURE, 0, null);
+            else{
+                Log.w(TAG, "onCharacteristicWriteRequest. Recv with 0 data");
             }
+
+
         }
 
         @Override
@@ -567,6 +554,7 @@ public class BleServer {
             long tId = Thread.currentThread().getId();
             Log.d(TAG, "Thread: " + tId + ". onMtuChanged, mtu = " + mtu);
             mMaxPayloadSize = mtu - GATT_HEADER_SIZE;
+            mIncomingByteBuff = ByteBuffer.allocate(mMaxPayloadSize);
         }
 
         @Override
